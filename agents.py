@@ -13,7 +13,7 @@ from dotenv import load_dotenv
 
 
 app = Flask(__name__)
-api_url = 'http://localhost:9000/pdf-urls/update'
+update_api_url = 'http://localhost:9000/pdf-urls/update'
 pdf_url = ""
 
 load_dotenv(dotenv_path='./.env')
@@ -157,7 +157,7 @@ async def handle_voice_synthesis(ctx: Context, sender: str, msg: StringArrayMode
         audio_path = text_to_speech(lecture, f"audio/lecture_{index}.mp3")
 
         print(f"Audio content written to {audio_path}")
-        requests.put(api_url, json={"url": pdf_url, "field": "audio_url", "page": index + 1, "value": "http://localhost:9000/" + f"audio/lecture_{index}.mp3"})
+        requests.put(update_api_url, json={"url": pdf_url, "field": "audio_url", "page": index + 1, "value": "http://localhost:9000/" + f"audio/lecture_{index}.mp3"})
         outputs.append(f"audio/lecture_{index}.mp3")
 
     response_tracker['voice'] = outputs
@@ -187,7 +187,7 @@ async def handle_audio_transcription(ctx: Context, sender: str, msg: StringArray
 
         with open(output_srt_file, 'w') as f:
             f.write(transcription)
-        requests.put(api_url, json={"url": pdf_url, "field": "transcription", "page": index + 1, "value": "http://localhost:9000/" + f"subtitles/{os.path.basename(audio_file)}.srt"})
+        requests.put(update_api_url, json={"url": pdf_url, "field": "transcription", "page": index + 1, "value": "http://localhost:9000/" + f"subtitles/{os.path.basename(audio_file)}.srt"})
 
         outputs.append(transcription)
     
