@@ -60,6 +60,7 @@ def extract_text_per_slide(pdf_data: bytes) -> List[SlideText]:
         for page_num in range(pdf_document.page_count):
             page = pdf_document.load_page(page_num)
             text = page.get_text("text")
+
             print(f"Extracted text from slide {page_num + 1}:\n{text}")
             slides.append(SlideText(slide_number=page_num + 1, text=text))
 
@@ -86,7 +87,17 @@ async def convert_pdf_to_images(ctx: Context, sender: str, req: UploadPDF):
 
         upload_url = "http://localhost:9000/" + image_path
         print(upload_url)
-        requests.put(api_url, json={"url": pdf_url, "image_url": upload_url, "value": upload_url})
+
+        url = "http://localhost:9000/pdf-item/create"  # Adjust if different
+        payload = {
+            "page": i + 1,
+            "pdf_url": pdf_url,
+            "image_url": upload_url
+        }
+        headers = {
+            "Content-Type": "application/json"
+        }
+        response = requests.post(url, json=payload, headers=headers)
 
     response_tracker['pdf_images'] = output
     return StringArrayModel(messages=output)
@@ -144,10 +155,12 @@ async def handle_voice_synthesis(ctx: Context, sender: str, msg: StringArrayMode
     for index, lecture in enumerate(msg.messages):
         print(f"Synthesizing voice for lecture: {lecture}")
         audio_path = text_to_speech(lecture, f"audio/lecture_{index}.mp3")
+        requests.put(api_url, json={"url": pdf_url, "field": "audio_url", "page": index + 1, "value": "http://localhost:9000/" + audio_path})
+
         outputs.append(audio_path)
 
     response_tracker['voice'] = outputs
-    await ctx.send(transcription_agent.address, StringArrayModel(messages=response_tracker['voice']))
+    # await ctx.send(transcription_agent.address, StringArrayModel(messages=response_tracker['voice']))
     # return StringArrayModel(messages=outputs)
 
 def text_to_speech(text: str, output_filename: str):
@@ -204,7 +217,7 @@ response_tracker = {
     'transcription': None
 }
 
-@user_agent.on_interval(30)
+@user_agent.on_interval(120)
 async def send_message(ctx: Context):
     pdf_path = "CSS.pdf"  # Path to your PDF file
     if os.path.exists(pdf_path):
@@ -216,12 +229,12 @@ async def send_message(ctx: Context):
         # Parse the JSON response and print the result
         data = response.json()
         print("PDF URLs with status 'processing' or 'not completed':")
-        for pdf_url in data.get("pdf_urls", []):
+        for pdf_uri in data.get("pdf_urls", []):
+            pdf_url = pdf_uri
             print(pdf_url)
             pdf_response = requests.get(pdf_url)
             with open("CSS.pdf", "wb") as file:
                 file.write(pdf_response.content)
-            response = requests.put(api_url, json={"url": pdf_url, "field": "status", "value": "completed"})
     else:
         print(f"Failed to retrieve data. Status code: {response.status_code}")
 
