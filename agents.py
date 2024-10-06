@@ -9,7 +9,8 @@ import asyncio
 from flask import Flask, request, jsonify
 import requests
 from dotenv import load_dotenv
-
+import re
+import hashlib
 
 
 app = Flask(__name__)
@@ -37,6 +38,28 @@ class ResponseSlides(Model):
 class StringArrayModel(Model):
     messages: List[str]
 
+
+def url_to_folder_name(url, max_length=255):
+    """
+    Converts a URL into a valid folder name by replacing invalid characters and truncating if necessary.
+    Args:
+        url (str): The URL to convert.
+        max_length (int): Maximum allowed length of the folder name (default is 255).
+
+    Returns:
+        str: A valid folder name derived from the URL.
+    """
+    # Step 1: Replace invalid characters with underscores
+    folder_name = re.sub(r'[<>:"/\\|?*]', '_', url)
+    
+    # Step 2: Limit the length of the folder name
+    if len(folder_name) > max_length:
+        # If the folder name is too long, use a hash of the URL to ensure uniqueness
+        hash_object = hashlib.md5(url.encode('utf-8')).hexdigest()
+        folder_name = folder_name[:max_length - len(hash_object) - 1] + '_' + hash_object
+    
+    return folder_name
+
 ### PDF to Text Agent: Handles PDF Upload and Text Extraction
 pdf_to_text_agent = Agent(name="PDF_to_Text_agent", seed="pdf text recovery phrase")
 
@@ -46,9 +69,7 @@ async def handle_upload_pdf(ctx: Context, sender: str, req: UploadPDF):
     pdf_data = base64.b64decode(req.filedata)
     slides = extract_text_per_slide(pdf_data)  # Remove limit if necessary
 
-    response_tracker['pdf_text'] = slides
-    # return ResponseSlides(slides=slides)
-    await ctx.send(lecture_agent.address, ResponseSlides(slides=response_tracker['pdf_text']))
+    await ctx.send(lecture_agent.address, ResponseSlides(slides=slides))
 
 def extract_text_per_slide(pdf_data: bytes) -> List[SlideText]:
     slides = []
@@ -75,13 +96,14 @@ pdf_to_image_agent = Agent(name="PDF_to_Image_agent", seed="pdf image recovery p
 
 @pdf_to_image_agent.on_message(model=UploadPDF)
 async def convert_pdf_to_images(ctx: Context, sender: str, req: UploadPDF):
+    global pdf_url
     pdf_data = base64.b64decode(req.filedata)
     images = convert_from_bytes(pdf_data)
     output = []
 
     # Save each page as an image
     for i, image in enumerate(images):
-        image_path = f'images/page_{i+1}.png'
+        image_path = f'images/{url_to_folder_name(pdf_url)}/page_{i+1}.png'
         image.save(image_path, 'PNG')
         output.append(image_path)
 
@@ -99,7 +121,6 @@ async def convert_pdf_to_images(ctx: Context, sender: str, req: UploadPDF):
         }
         response = requests.post(url, json=payload, headers=headers)
 
-    response_tracker['pdf_images'] = output
     return StringArrayModel(messages=output)
 
 ### Lecture Agent: Generates Lecture from Extracted Text and Images
@@ -109,8 +130,7 @@ lecture_agent = Agent(name="Lecture_agent", seed="lecture recovery phrase")
 async def handle_generate_lecture(ctx: Context, sender: str, msg: ResponseSlides):
     lectures = generate_lecture_from_slides(msg.slides)
     
-    response_tracker['lecture'] = lectures
-    await ctx.send(voice_agent.address, StringArrayModel(messages=response_tracker['lecture']))
+    await ctx.send(voice_agent.address, StringArrayModel(messages=lectures))
     # return StringArrayModel(messages=lectures)
 
 def generate_lecture_from_slides(slides: List[SlideText], previous_lectures: str = "") -> List[str]:
@@ -149,19 +169,20 @@ voice_agent = Agent(name="Voice_agent", seed="voice recovery phrase")
 
 @voice_agent.on_message(model=StringArrayModel)
 async def handle_voice_synthesis(ctx: Context, sender: str, msg: StringArrayModel):
+    global pdf_url
     print("Received messages for voice synthesis.")
     outputs = []
 
     for index, lecture in enumerate(msg.messages):
         print(f"Synthesizing voice for lecture: {lecture}")
-        audio_path = text_to_speech(lecture, f"audio/lecture_{index}.mp3")
+        audio_path = text_to_speech(lecture, f"audio/{url_to_folder_name(pdf_url)}/lecture_{index}.mp3")
 
         print(f"Audio content written to {audio_path}")
-        requests.put(update_api_url, json={"url": pdf_url, "field": "audio_url", "page": index + 1, "value": "http://localhost:9000/" + f"audio/lecture_{index}.mp3"})
-        outputs.append(f"audio/lecture_{index}.mp3")
+        requests.put(update_api_url, json={"url": pdf_url, "field": "audio_url", "page": index + 1, "value": "http://localhost:9000/" + f"audio/{url_to_folder_name(pdf_url)}/lecture_{index}.mp3"})
+        print({"url": pdf_url, "field": "audio_url", "page": index + 1, "value": "http://localhost:9000/" + f"audio/{url_to_folder_name(pdf_url)}/lecture_{index}.mp3"})
+        outputs.append(f"audio/{url_to_folder_name(pdf_url)}/lecture_{index}.mp3")
 
-    response_tracker['voice'] = outputs
-    await ctx.send(transcription_agent.address, StringArrayModel(messages=response_tracker['voice']))
+    await ctx.send(transcription_agent.address, StringArrayModel(messages=outputs))
     # return StringArrayModel(messages=outputs)
 
 def text_to_speech(text: str, output_filename: str):
@@ -179,20 +200,19 @@ transcription_agent = Agent(name="Transcription_agent", seed="transcription reco
 
 @transcription_agent.on_message(model=StringArrayModel)
 async def handle_audio_transcription(ctx: Context, sender: str, msg: StringArrayModel):
+    global pdf_url
     outputs = []
 
     for index, audio_file in enumerate(msg.messages):
-        output_srt_file = f'subtitles/{os.path.basename(audio_file)}.srt'
+        output_srt_file = f'subtitles/{url_to_folder_name(pdf_url)}/{os.path.basename(audio_file)}.srt'
         transcription = transcribe_audio(audio_file)
 
         with open(output_srt_file, 'w') as f:
             f.write(transcription)
-        requests.put(update_api_url, json={"url": pdf_url, "field": "transcription", "page": index + 1, "value": "http://localhost:9000/" + f"subtitles/{os.path.basename(audio_file)}.srt"})
-
+        requests.put(update_api_url, json={"url": pdf_url, "field": "transcription", "page": index + 1, "value": "http://localhost:9000/" + f"subtitles/{url_to_folder_name(pdf_url)}/{os.path.basename(audio_file)}.srt"})
+        print({"url": pdf_url, "field": "transcription", "page": index + 1, "value": "http://localhost:9000/" + f"subtitles/{url_to_folder_name(pdf_url)}/{os.path.basename(audio_file)}.srt"})
         outputs.append(transcription)
     
-    response_tracker['transcription'] = outputs
-    print(response_tracker)
     return StringArrayModel(messages=outputs)
 
 def transcribe_audio(audio_file):
@@ -210,15 +230,7 @@ def transcribe_audio(audio_file):
 ### User Agent: Handles User Interaction
 user_agent = Agent(name="User_agent", seed="user recovery phrase")
 
-response_tracker = {
-    'pdf_text': None,
-    'pdf_images': None,
-    'lecture': None,
-    'voice': None,
-    'transcription': None
-}
-
-@user_agent.on_interval(120)
+@user_agent.on_interval(5)
 async def send_message(ctx: Context):
     global pdf_url
     pdf_path = "CSS.pdf"  # Path to your PDF file
@@ -242,6 +254,9 @@ async def send_message(ctx: Context):
 
     if not os.path.exists(pdf_path):
         return
+    
+    for directory in ['images', 'audio', 'subtitles']:
+        os.makedirs(directory + f"/{url_to_folder_name(pdf_url)}", exist_ok=True)
 
     ctx.logger.info("Sending a message to the pdf parser.")
 
@@ -258,26 +273,8 @@ async def send_message(ctx: Context):
     # Simulate the request object
     req = UploadPDF(filename=pdf_path, filedata=encoded_pdf)
 
-
     await ctx.send(pdf_to_image_agent.address, req)
-
-    # 1. Extract text from pdf
     await ctx.send(pdf_to_text_agent.address, req)
-
-    # 2. Extract images from pdf
-    # await ctx.send(pdf_to_image_agent.address, req)
-
-    # 3. Generate lecture speech from text and images of the slides
-    # await ctx.send(lecture_agent.address, ResponseSlides(slides=response_tracker['pdf_text']))
-
-    # 4. Synthesize voice for the lecture
-    # await ctx.send(voice_agent.address, StringArrayModel(messages=response_tracker['lecture']))
-
-    # 5. Transcribe the lecture audio
-    # await ctx.send(
-    #     transcription_agent.address,
-    #     StringArrayModel(messages=response_tracker['voice'])
-    # )
 
 
 ### Bureau to Manage Agents
