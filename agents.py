@@ -46,7 +46,7 @@ async def handle_upload_pdf(ctx: Context, sender: str, req: UploadPDF):
     pdf_data = base64.b64decode(req.filedata)
     slides = extract_text_per_slide(pdf_data)  # Remove limit if necessary
 
-    response_tracker['pdf_text'] = slides[:1]
+    response_tracker['pdf_text'] = slides
     # return ResponseSlides(slides=slides)
     await ctx.send(lecture_agent.address, ResponseSlides(slides=response_tracker['pdf_text']))
 
@@ -123,7 +123,7 @@ def generate_lecture_from_slides(slides: List[SlideText], previous_lectures: str
         messages = [
             {
                 "role": "user",
-                "content": f"Here is the lecture so far: {lecture_history}.\nNow, generate a lecture speech for slide {slide.slide_number}: {slide.text}"
+                "content": f"Here is the lecture so far: {lecture_history}.\nNow, generate a minute long lecture speech for slide {slide.slide_number}: {slide.text}"
             }
         ]
 
@@ -155,12 +155,13 @@ async def handle_voice_synthesis(ctx: Context, sender: str, msg: StringArrayMode
     for index, lecture in enumerate(msg.messages):
         print(f"Synthesizing voice for lecture: {lecture}")
         audio_path = text_to_speech(lecture, f"audio/lecture_{index}.mp3")
-        requests.put(api_url, json={"url": pdf_url, "field": "audio_url", "page": index + 1, "value": "http://localhost:9000/" + audio_path})
 
-        outputs.append(audio_path)
+        print(f"Audio content written to {audio_path}")
+        requests.put(api_url, json={"url": pdf_url, "field": "audio_url", "page": index + 1, "value": "http://localhost:9000/" + f"audio/lecture_{index}.mp3"})
+        outputs.append(f"audio/lecture_{index}.mp3")
 
     response_tracker['voice'] = outputs
-    # await ctx.send(transcription_agent.address, StringArrayModel(messages=response_tracker['voice']))
+    await ctx.send(transcription_agent.address, StringArrayModel(messages=response_tracker['voice']))
     # return StringArrayModel(messages=outputs)
 
 def text_to_speech(text: str, output_filename: str):
@@ -169,7 +170,6 @@ def text_to_speech(text: str, output_filename: str):
         input=text,
         voice="nova"
     )
-    
     response.stream_to_file(output_filename)
     print(f"Audio content written to {output_filename}")
     return output_filename
@@ -187,6 +187,7 @@ async def handle_audio_transcription(ctx: Context, sender: str, msg: StringArray
 
         with open(output_srt_file, 'w') as f:
             f.write(transcription)
+        requests.put(api_url, json={"url": pdf_url, "field": "transcription", "page": index + 1, "value": "http://localhost:9000/" + f"subtitles/{os.path.basename(audio_file)}.srt"})
 
         outputs.append(transcription)
     
@@ -219,6 +220,7 @@ response_tracker = {
 
 @user_agent.on_interval(120)
 async def send_message(ctx: Context):
+    global pdf_url
     pdf_path = "CSS.pdf"  # Path to your PDF file
     if os.path.exists(pdf_path):
         os.remove(pdf_path)
@@ -237,9 +239,6 @@ async def send_message(ctx: Context):
                 file.write(pdf_response.content)
     else:
         print(f"Failed to retrieve data. Status code: {response.status_code}")
-
-    print("Sending a message to the pdf parser.")
-
 
     if not os.path.exists(pdf_path):
         return

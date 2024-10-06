@@ -1,4 +1,4 @@
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, send_from_directory
 from flask_sqlalchemy import SQLAlchemy
 from dotenv import load_dotenv
 from datetime import datetime
@@ -9,6 +9,25 @@ load_dotenv()
 
 # Initialize Flask app
 app = Flask(__name__)
+
+audio_folder = os.path.join(os.getcwd(), 'audio')
+images_folder = os.path.join(os.getcwd(), 'images')
+subtitles_folder = os.path.join(os.getcwd(), 'subtitles')
+
+# Serve files from the "audio" directory
+@app.route('/audio/<path:filename>')
+def serve_audio(filename):
+    return send_from_directory(audio_folder, filename)
+
+# Serve files from the "images" directory
+@app.route('/images/<path:filename>')
+def serve_images(filename):
+    return send_from_directory(images_folder, filename)
+
+# Serve files from the "subtitles" directory
+@app.route('/subtitles/<path:filename>')
+def serve_subtitles(filename):
+    return send_from_directory(subtitles_folder, filename)
 
 # Set up the SQLAlchemy database URI
 app.config["SQLALCHEMY_DATABASE_URI"] = os.getenv("POSTGRES_CONN")
@@ -48,6 +67,7 @@ def get_pdf_urls():
     
     file = db.session.query(yhack2024_slide).filter_by(url=file.url).first()
     file.status = 'completed'
+    db.session.commit()
 
     # Return the URLs as a JSON response
     return jsonify({"pdf_urls": [file.url]})
@@ -103,4 +123,8 @@ with app.app_context():
 
 # Run the Flask app
 if __name__ == '__main__':
+    os.makedirs(audio_folder, exist_ok=True)
+    os.makedirs(images_folder, exist_ok=True)
+    os.makedirs(subtitles_folder, exist_ok=True)
+
     app.run(debug=True, port=os.getenv("PORT", default=9000))
