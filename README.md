@@ -29,21 +29,12 @@ Follow these steps to set up and run the project:
 
 3. Install python dependecies:
     ```bash
-    pip install -r requirements.txt
+    pip3 install -r requirements.txt
     ```
 
-4. Install npm dependecies for the React frontend and build it:
-    - **MacOS and Linux:**
-        ```bash
-        cd react-app/ && npm i && npm run build && cd ..
-        ```
-    - **Windows (PowerShell):**
-        ```bash
-        cd react-app/; if ($?) { npm i }; if ($?) { npm run build }; if ($?) { cd .. }
-        ```
 
 5. To run the server:
     ```bash
-    FLASK_DEBUG=1 pip3 install -r requirements.txt && python3 -m flask --app index run --reload
+    FLASK_DEBUG=1 pip3 install -r requirements.txt && python3 -m flask --app main run --reload
     ```
 
