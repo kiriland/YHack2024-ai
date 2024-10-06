@@ -1,6 +1,7 @@
 from flask import Flask, jsonify, request
 from flask_sqlalchemy import SQLAlchemy
 from dotenv import load_dotenv
+from datetime import datetime
 import os
 
 # Load environment variables
@@ -25,6 +26,14 @@ class yhack2024_slide(db.Model):
     created_at = db.Column(db.DateTime, nullable=False)
     updated_at = db.Column(db.DateTime, nullable=False)
 
+class yhack2024_item(db.Model):
+    page = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    audio_url = db.Column(db.String(1024), nullable=False)
+    image_url = db.Column(db.String(1024), nullable=False)
+    transcription = db.Column(db.String(10256), nullable=False)
+    user_id = db.Column(db.String(256), nullable=False)
+    created_at = db.Column(db.DateTime(timezone=True),nullable=False)
+    updated_at = db.Column(db.DateTime(timezone=True))
 # Route to get URLs of PDF files with status 'processing' or 'not completed'
 @app.route('/pdf-urls', methods=['GET'])
 def get_pdf_urls():
@@ -44,13 +53,23 @@ def update_pdf_status():
     # Get the URL from the request body
     data = request.get_json()
     url_to_update = data.get('url')
-
+    field = data.get('field')
+    value = data.get('value')
+    
+    new_item = yhack2024_item(
+    audio_url='https://example.com/audio.mp3',
+    image_url='https://example.com/image.jpg',
+    transcription='This is the transcription of the audio content.',
+    user_id='user123',
+    created_at=datetime.utcnow(),
+    updated_at=datetime.utcnow()
+    )
     # Query the database for the URL provided
     file = db.session.query(yhack2024_slide).filter_by(url=url_to_update).first()
-
     if file:
         # Update the status to 'completed'
         file.status = 'completed'
+        db.session.add(new_item)
         db.session.commit()  # Commit the change to the database
         return jsonify({"message": f"Status updated for URL: {url_to_update}"}), 200
     else:
@@ -63,4 +82,4 @@ with app.app_context():
 
 # Run the Flask app
 if __name__ == '__main__':
-    app.run(debug=True, port=os.getenv("PORT", default=5000))
+    app.run(debug=True, port=os.getenv("PORT", default=9000))

@@ -13,6 +13,8 @@ from dotenv import load_dotenv
 
 
 app = Flask(__name__)
+api_url = 'http://localhost:9000/pdf-urls/update'
+pdf_url = ""
 
 load_dotenv(dotenv_path='./.env')
 client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
@@ -44,7 +46,7 @@ async def handle_upload_pdf(ctx: Context, sender: str, req: UploadPDF):
     pdf_data = base64.b64decode(req.filedata)
     slides = extract_text_per_slide(pdf_data)  # Remove limit if necessary
 
-    response_tracker['pdf_text'] = slides[:10]
+    response_tracker['pdf_text'] = slides[:1]
     # return ResponseSlides(slides=slides)
     await ctx.send(lecture_agent.address, ResponseSlides(slides=response_tracker['pdf_text']))
 
@@ -81,6 +83,10 @@ async def convert_pdf_to_images(ctx: Context, sender: str, req: UploadPDF):
         image_path = f'images/page_{i+1}.png'
         image.save(image_path, 'PNG')
         output.append(image_path)
+
+        upload_url = "http://localhost:9000/" + image_path
+        print(upload_url)
+        requests.put(api_url, json={"url": pdf_url, "image_url": upload_url, "value": upload_url})
 
     response_tracker['pdf_images'] = output
     return StringArrayModel(messages=output)
@@ -204,7 +210,7 @@ async def send_message(ctx: Context):
     if os.path.exists(pdf_path):
         os.remove(pdf_path)
 
-    url = "http://localhost:5000/pdf-urls"
+    url = "http://localhost:9000/pdf-urls"
     response = requests.get(url)
     if response.status_code == 200:
         # Parse the JSON response and print the result
@@ -215,8 +221,7 @@ async def send_message(ctx: Context):
             pdf_response = requests.get(pdf_url)
             with open("CSS.pdf", "wb") as file:
                 file.write(pdf_response.content)
-            api_url = 'http://localhost:5000/pdf-urls/update'
-            response = requests.put(api_url, json={"url": pdf_url})
+            response = requests.put(api_url, json={"url": pdf_url, "field": "status", "value": "completed"})
     else:
         print(f"Failed to retrieve data. Status code: {response.status_code}")
 
